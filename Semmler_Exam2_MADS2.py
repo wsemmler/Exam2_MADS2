@@ -14,7 +14,6 @@ import seaborn as sns
 import os
 import random
 import statsmodels.api as sm
-import math
 from numpy import loadtxt
 import joblib
 from keras.models import Sequential
@@ -53,39 +52,45 @@ from numpy import loadtxt
 from keras_tuner import Hyperband
 from sklearn.preprocessing import MinMaxScaler
 
-SEED_VALUE = 42
-os.environ["PYTHONHASHSEED"] = str(SEED_VALUE)
-random.seed(SEED_VALUE)
+import warnings
 
+SEED_VALUE = 42
+
+os.environ["PYTHONHASHSEED"] = str(SEED_VALUE)
+os.environ["TF_DETERMINISTIC_OPS"] = "1"
+random.seed(SEED_VALUE)
 np.random.seed(SEED_VALUE)
 tf.random.set_seed(SEED_VALUE)
-os.environ["TF_DETERMINISTIC_OPS"] = "1"
+
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 # CRISP-DM Framework
 ## 1. Business Understanding
 ##### In the CRISP-DM framework, the Business Understanding phase defines the business problem and translates it into a data mining task (Shearer, 2000). 
-##### The large number of cybersecurity alerts makes manual threat prioritization difficult and time-consuming. then comes the question, How can machine learning models classify automatically and accurately cybersecurity alerts into discrete threat severity levels?.
-##### Therefore, this study addresses the problem as a multiclass classification task to automatically predict threat severity based on its characteristics (Shearer, 2000; Marbán et al., 2009). 
+##### The large number of cybersecurity alerts makes manual threat prioritization difficult and time-consuming. then comes the question, how can machine learning models classify automatically and accurately cybersecurity alerts into discrete threat severity levels?.
+##### Therefore, this study addresses the problem as a multiclass classification task to automatically predict the severity of cybersecurity events based on their characteristics (DeCastro-García et al., 2020).
 ##### The study aims to classify threats into three severity levels: Low, Medium, and Critical.
 
 # ------------------------------------------------------------------------------------------------
 
 ## 2. DATA UNDERSTANDING
-##### The second phase is Data Understanding, which focuses on examining the available data, its features, class distribution, and data quality (Shearer, 2000). 
-##### This study uses the Federated Cyber Threat Intelligence Dataset. It was downloaded from Kaggle and examined for its features, class distribution, and data quality.
+##### The second phase is Data Understanding, which focuses on involves examining the dataset, understanding its features and class distribution, and assessing its data quality (Shearer, 2000).
+##### This study uses the Federated Cyber Threat Intelligence Dataset. It was downloaded from Kaggle https://www.kaggle.com/datasets/colabsss/cyber-threat-intelligence-dataset and examined for its features, class distribution, and data quality.
 ##### The dataset contains 27 numerical and 10 categorical features. The original target (threat_severity) contained 4 severity levels: Low, Medium, High and Critical. 
 
-# # Download latest version
-# path = kagglehub.dataset_download("colabsss/cyber-threat-intelligence-dataset")
-# print("Path to dataset files:", path)
+import kagglehub
+# Download latest version
+path = kagglehub.dataset_download("colabsss/cyber-threat-intelligence-dataset")
+print("Path to dataset files:", path)
+df = pd.read_csv(os.path.join(path, "Federated_Cyber_Threat_Intelligence_Dataset.csv"))
 
-df = pd.read_csv("/Users/ws/Documents/DataScienceCourse/data/Semmler_Exam2_MADS2/data/Federated_Cyber_Threat_Intelligence_Dataset.csv")
-
-print(df.columns)
+# df = pd.read_csv("/Users/ws/Documents/DataScienceCourse/data/Semmler_Exam2_MADS2/data/Federated_Cyber_Threat_Intelligence_Dataset.csv")
+# print(df.columns)
 # df.info()
 
 num = df.select_dtypes(include=["int64", "float64"]).columns.tolist()
-cat = df.select_dtypes(include=["object"]).columns.tolist()
+cat = df.select_dtypes(include=["object", "string"]).columns.tolist()
 
 cat2 = ["source_port", "destination_port"]
 timestamp = ["timestamp"]
@@ -110,6 +115,8 @@ print("Total missing values:", df.isna().sum().sum())
 ##### These skewed features were later preprocessed using log1p transformation to stabilize variance, followed by Min-Max scaling to normalize into a uniform 0–1 range, for ANN.
 ##### But the tree-based architectures such, Random Forest and XGBoost split data step-by-step and handle non-linear relationships natively and require no such feature transformation.
 
+import math
+
 skewed_features = [
     col for col in numerical if df[col].mean() > (df[col].median() * 1.5)
 ]
@@ -124,13 +131,13 @@ for i, col in enumerate(numerical):
 
 [fig.delaxes(axes[j]) for j in range(len(numerical), len(axes))]
 plt.tight_layout()
-plt.savefig("all_boxplots.png", dpi=150, bbox_inches="tight")
 plt.show()
+
 
 ### 2.3 ChiSquared Categorical Feature Significant
 ##### A Pearson’s Chi-Square was conducted to evaluate the relationship between categorical features and the target variable [threat_severity], using a significance threshold of \(\alpha = 0.05\).
-##### 7 Categorical variables that showed no significant association with threat severity such; event_id, organization_id, agent_id, 
-# protocol_type, service_type, source_port, and destination_port, were considered excluded from modeling phase.
+##### 7 Categorical variables that showed no significant association with threat severity such; event_id, organization_id, agent_id, protocol_type, service_type, 
+# source_port, and destination_port, were considered excluded from modeling phase.
 
 from scipy.stats import chi2_contingency
 
@@ -182,6 +189,10 @@ for feature in numerical:
 
 def cramers_v(x, y):
     table = pd.crosstab(x, y)
+
+    if table.shape[0] < 2 or table.shape[1] < 2:
+        return 0.0
+
     chi2 = chi2_contingency(table, correction=False)[0]
     n = table.values.sum()
     r, k = table.shape
@@ -217,10 +228,11 @@ print("p-value:", p)
 
 ### 2.6 Examine Target Feature Class Distribution
 ##### The original target feature [threat_severity] contains 4 classes with such distribution: Low (30.4%), Medium (22.0%), High (31.7%), and Critical (16.0%).
-##### To evaluate the separability of these classes, a t-SNE projection (perplexity=30) was visualized.
+##### To visually examine the separability of these classes, a t-SNE projection (perplexity=30) was applied. 
+# t-SNE is a nonlinear dimensionality-reduction technique commonly used to visualize high-dimensional data and identify local structures and potential clusters (van der Maaten & Hinton, 2008).
 ##### Observation: TSNE projects, while the Low (green cluster) and Medium (yellow cluster) classes display clear, distinct spatial separation, the High (orange) and Critical (red) classes shows overlapping behavioral patterns. 
-##### Consideration: To resolve overlap classes, High and Critical categories were consider to be merged into a single High/Critical class. 
-# This reduces the target into a clean 3-class classification problem (Low, Medium, and Critical).
+##### Consideration: based on this observation, High and Critical categories were consider to be merged into a single High/Critical class. 
+# This reduces the target into 3-class classification problem (Low, Medium, and Critical).
 
 severity_distribution = (df["threat_severity"]
                          .value_counts().reindex(["Low", "Medium", "High", "Critical"]).to_frame("Count"))
@@ -231,7 +243,9 @@ plt.figure(figsize=(6, 4))
 order = ["Low", "Medium", "High", "Critical"]
 colors = ["#2ecc71", "#f1c40f", "#e67e22", "#e74c3c"]
 
-ax2 = sns.countplot(x="threat_severity", data=df, order=order, palette=colors, stat="count")
+ax2 = sns.countplot(
+    x="threat_severity", data=df, order=order, hue="threat_severity",
+    palette=colors, legend=False, stat="count")
 
 for i, p in enumerate(ax2.patches):
     pct = (p.get_height() / len(df)) * 100
@@ -298,7 +312,7 @@ X = df.drop(columns=[
     'destination_port', 'source_port', 'service_type', 'protocol_type'])
 
 numerical = X.select_dtypes(include=["int64", "float64"]).columns
-categorical = X.select_dtypes(include=["object"]).columns
+categorical = X.select_dtypes(include=["object", "string"]).columns
 
 ### 3.3 Encode Target Feature
 ##### The three target classes were encoded into numerical labels using LabelEncoder. This converts the categorical severity labels into numerical values required by the machine learning models.
@@ -332,14 +346,12 @@ X_train, X_test, y_train, y_test = train_test_split(
 # ------------------------------------------------------------------------------------------------
 
 ## 4. Modelling
-
 ##### CRISP-DM recommends evaluating multiple modeling techniques because different algorithms may produce different levels of predictive performance depending on the characteristics of the dataset (Shearer, 2000; Marbán et al., 2009). 
 ##### The Modeling phase consisted of selecting, configuring, and training three machine learning models: Random Forest (RF), XGBoost (XGB), and Artificial Neural Network (ANN). 
-##### These models were selected because ensemble tree methods such as RF and XGB are widely used for structured cybersecurity classification, 
-# while ANN can learn complex nonlinear relationships in security data (Sow & Mehdi, 2025; Sarker et al., 2021). 
+##### These models were selected to compare different machine learning approaches for cybersecurity classification. RF and XGBoost are tree-based ensemble methods, while ANN can learn complex nonlinear relationships in security data. 
+# All three approaches have been used in cybersecurity research, including intrusion detection (Sow & Mehdi, 2025; Naik et al., 2022).
 
 ### 4.1 Model 1 Random Forest
-
 ##### RF model demonstrates strong prediction with an average AUC of 0.87 and a test accuracy of 79.6% and its indicating mild overfitting.
 ##### Problem found in classifying Medium target Severity: Performance drops significantly for the Medium class (0.51 F1-score). 
 # The confusion matrix reveals a clear overlap challenge, where 260 Medium threats were misclassified as Critical, and 169 Critical threats were misclassified as Medium.
@@ -394,17 +406,13 @@ plt.legend()
 plt.show()
 
 ### 4.1.1 Random Forest Hyperparameter using GRIDSearchCV
-
 ##### Despite tuning, the model still struggles to clearly separate the Medium and Critical classes. 
 # The confusion matrix shows 254 Medium threats were still misclassified as Critical, and 171 Critical threats were misclassified as Medium.
 
 from sklearn.metrics import f1_score
 from sklearn.model_selection import GridSearchCV
 
-
 # HYPERTUNE RANDOM FOREST
-
-# rfmodel = Pipeline([('preprocessor', preprocessor), ('classifier', (rf))])
 
 rf_param_grid = {
     "classifier__n_estimators": [100, 150, 200],
@@ -445,7 +453,7 @@ y_prob_rf_grid = rf_grid.predict_proba(X_test)
 # roc_auc_score(y_test, y_prob, multi_class="ovr", average="macro")
 print("Average AUC:", roc_auc_score(y_test, y_prob_rf_grid, multi_class="ovr", average="macro"))
 
-### 4.2 Model 2 XGBoost
+### 4.2 Model 2 XGB
 
 ##### XGB model achieves an average AUC of 0.8765, which is identical to the Random Forest RF performance. From (train score: 79.71%  vs. test score: 79.60%), XGB successed to eliminate the mild overfitting gap. 
 ##### The Medium class remains the main concern for XGB (0.51 F1-score). This tells that the remaining mistakes are caused by messy or overlapping data points rather than the algorithms themselves.
@@ -505,9 +513,9 @@ plt.title("ROC Curve – Threat Severity")
 plt.legend()
 plt.show()
 
-### 4.2.1 XGBoost Hyperparameter using GRIDSearchCV
-
-#####  The grid search were designed to explore what worked best by testing more trees (up to 300) and keeping depth structures simple of 2–4, while adding strict randomness (0.6–0.7 sampling) and a built data filter (reg_alpha) to help the model to stop mixing up Medium and Critical threats. 
+### 4.2.1 XGB Hyperparameter using GRIDSearchCV
+#####  The grid search were designed to explore what worked best by testing more trees (up to 300) and keeping depth structures simple of 2–4, 
+# while adding strict randomness (0.6–0.7 sampling) and a built data filter (reg_alpha) to help the model to stop mixing up Medium and Critical threats. 
 ##### Based on above parameters, 324 model setup were performed with 5-fold cross validation. 
 ##### Result shows, 255 Medium cases were misclassified as Critical, and 82 were misclassified as Low, means tuned XGBoost trees still failed to significantly clear up Medium class.
 
@@ -556,11 +564,14 @@ y_prob_xgb_grid = xgb_grid.predict_proba(X_test)
 print("Average AUC:", roc_auc_score(y_test, y_prob_xgb_grid, multi_class="ovr", average="macro"))
 
 ### 4.3 Model 3 ANN
-
 ##### Dense(3) are chosen because target severity has 3 classes (Critical, Low, Medium).
-##### ANN train score (79.20%) and test score (78.87%) are almost identical, means ANN performs well on completely new unseen data. This shows that the model did not overfit and is highly reliable.
+##### ANN train score (78.71%) and test score (78.63%) are almost identical, means ANN performs well on completely new unseen data. This shows that the model did not overfit and is highly reliable.
 ##### ANN predicted Critical more aggressive and catch more actual Critical cases (1303) but also misclassify more Medium class (332).
 
+import os
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+
+import tensorflow as tf
 from sklearn.preprocessing import FunctionTransformer, MinMaxScaler, OneHotEncoder
 
 ann_transformer = Pipeline(steps=[
@@ -584,9 +595,7 @@ print("ANN input shape:", X_train_ann.shape)
 # Model
 
 ann_model = Sequential()
-
 ann_model.add(Input(shape=(X_train_ann.shape[1],)))
-
 ann_model.add(Dense(12, activation="relu"))
 ann_model.add(Dense(8, activation="relu"))
 
@@ -595,19 +604,12 @@ ann_model.add(Dense(3, activation="softmax"))
 
 ann_model.compile(
     loss="sparse_categorical_crossentropy",
-    optimizer="adam",
-    metrics=["accuracy"]
-)
+    optimizer="adam", metrics=["accuracy"])
 
 # Train 
 ann_model.fit(
-    X_train_ann,
-    y_train,
-    epochs=50,
-    batch_size=10,
-    validation_split=0.2
-)
-
+    X_train_ann, y_train,
+    epochs=50, batch_size=10, validation_split=0.2)
 
 # EVALUATION
 
@@ -623,7 +625,6 @@ print(f"ANN Test Accuracy:  {test_accuracy:.4f}")
 # PREDICTIONS
 y_prob_ann = ann_model.predict(X_test_ann)
 y_pred_ann = y_prob_ann.argmax(axis=1)
-
 
 # CLASSIFICATION 
 print(classification_report(y_test, y_pred_ann, target_names=le_severity_3.classes_))
@@ -656,7 +657,6 @@ plt.title("ROC Curve – ANN Threat Severity")
 plt.legend()
 plt.show()
 
-
 # AUC
 for i, class_name in enumerate(le_severity_3.classes_):
     fpr, tpr, thresholds = roc_curve(y_test_bin[:, i], y_prob_ann[:, i]) 
@@ -664,10 +664,15 @@ for i, class_name in enumerate(le_severity_3.classes_):
     print(f"{class_name} AUC: {auc_ann:.4f}")
 
 ### 4.3.1 Model 3 ANN Hyperparameter using RSTuner
-
-##### Random Search was chosen for ANN optimization because the number of hyperparameter combination is uncomplicated. Since the tuning was limited to exploring between 1 and 3 hidden layers, 
-# checking 30 random setups was enough to find the best configuration without needing a more complex algorithm like Hyperband.
+##### Random Search was chosen for ANN optimization because the number of hyperparameter combination is uncomplicated. 
+# Since the tuning was limited to exploring between 1 and 3 hidden layers, checking 30 random setups was enough to find the best configuration without needing a more complex algorithm like Hyperband.
 ##### With 30 trials tuned ANN achieved 78.67% test accuracy and a 0.8760 AUC without overfitting, while reducing Medium misclassifications compare with ANN without tuning.
+
+# HYPERPARAMETER 
+import os
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+
+from tensorflow import keras
 
 # ANN MODEL BUILDER
 def model_builder(hp):
@@ -776,13 +781,12 @@ print("Macro ROC-AUC:", roc_auc_score(y_test, y_prob_ann_rs, multi_class="ovr", 
 
 # ------------------------------------------------------------------------------------------------
 
-### 5. EVALUATION
-
+## 5. EVALUATION
 ##### Based on the metrics provided, the XGBoost Grid Search (XGB Grid) model is the overall best performing model. 
 ##### 1. While Random Forest Grid Search (RF Grid) has the highest Test Accuracy (79.77%), the XGBoost Grid model offers a much better balance because it achieves the highest overall AUC (0.8766). 
 ##### 2. nearly identical test accuracy (79.73%) and train accuracy (79.70%), proves it avoids overfitting.
-##### 3. In the confusion matrix XGB Grid balances its predictions well across all categories. For Medium Severity, 
-# XGB Grid model accurately identifies 322 cases, with its remaining errors divide between Critical (255) and Low (82).
+##### 3. In the confusion matrix XGB Grid balances its predictions well across all categories. 
+# For Medium Severity, XGB Grid model accurately identifies 322 cases, with its remaining errors divide between Critical (255) and Low (82).
 
 cm = confusion_matrix(y_test, y_pred_xgb_grid)
 classes = le_severity_3.classes_
@@ -811,14 +815,161 @@ plt.ylabel("True Severity Class")
 plt.tight_layout()
 plt.show()
 
-### 5.1 Future Work
+### 5.1 Local LIME Analysis
+##### LIME Transparency Analysis uses to explain which features contributes most to selected target classes. The selected model gives prediction but no explanation why it behaves that way. LIME used on specific event to explain which features act as positive or negative support for each target severity classes and explain exactly why the model made its decision.
+##### LIME Plot shows:
+##### Green Bars: Features that align with the class prediction and vote YES. They push the model to choose specific class.
+##### Red Bars: Features that disagree with the class prediction and vote NO. They push the model away from specific class.
+##### Critical Class: Chart is mostly red, the model is confident which features with low score push the model away from this class.
+##### Low Class: Chart is mostly green, the model is confident which features with low score push the model to choose this class.
+##### Medium Class: This chart has a mix of red and green. It shows the model sees confusing clues, meaning it is unsure about this class.
 
-##### Future research could investigate stricter decision boundaries for the Medium class. Since most classification errors occurred between Medium and the other severity levels, 
-# adjusting class thresholds may improve the detection of Medium threats and overall model performance.
+# LIME Transparency Analysis
+
+from lime import lime_tabular
+
+# Best XGBoost pipeline
+best_pipeline = xgb_grid.best_estimator_
+preprocessor = best_pipeline.named_steps["preprocessor"]
+best_xgb = best_pipeline.named_steps["classifier"]
+
+X_train_lime = preprocessor.transform(X_train)
+X_test_lime = preprocessor.transform(X_test)
+
+# Feature and class names
+feature_names = preprocessor.get_feature_names_out()
+feature_names = [name.replace("remainder__", "")
+        .replace("num__", "")
+        .replace("cat__", "")
+    for name in feature_names]
+
+class_names = list(le_severity_3.classes_)
+
+# LIME explainer
+explainer_lime = lime_tabular.LimeTabularExplainer(
+    X_train_lime,
+    feature_names=feature_names,
+    class_names=class_names,
+    mode="classification",
+    discretize_continuous=True,
+    random_state=42
+)
+
+# Select one example
+example_index = 6
+example_x = X_test_lime[example_index]
+
+# Explain all three classes
+explanation = explainer_lime.explain_instance(
+    example_x,
+    best_xgb.predict_proba,
+    num_features=20,
+    labels=[0, 1, 2]
+)
+
+fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+feature_names = best_pipeline.named_steps["preprocessor"].get_feature_names_out()
+feature_names = [name.replace("remainder__", "") for name in feature_names]
+
+# Plot the explanations side-by-side
+for i, class_index in enumerate([0, 1, 2]):
+    values = explanation.as_list(label=class_index)
+    
+    features = [x[0] for x in values]
+    weights = [x[1] for x in values]
+    colors = ['#dc3545' if w < 0 else '#198754' for w in weights]
+    
+    axes[i].barh(features, weights, color=colors)
+    axes[i].set_title(f"LIME - {class_names[class_index]}")
+    axes[i].set_xlabel("LIME Weight")
+    axes[i].invert_yaxis()
+
+plt.tight_layout()
+plt.show()
+
+### 5.2 SHAP Analysis
+##### It calculates the average contribution of a feature across all possible feature combinations. It shows which features are the most important and the model cares about.
+
+### 5.2.1 SHAP Bar Analysis
+##### The stacked bar chart shows the average overall impact of each feature across all three target classes combined:
+##### Longer Bars: The features at the top with longer bars (like byte_rate and behavioral_risk_score) are the most powerful drivers the model uses to determine threat severity.
+##### Shorter Bars: Features at the very bottom (like threat_indicator_count or process_count) has almost no length, meaning the model mostly ignores them when deciding threat severity class.
+##### Colors: Shows which class driven most by the specific feature  
+
+# SHAP Transparency Analysis
+import warnings
+
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
+
+best_pipeline = xgb_grid.best_estimator_
+
+preprocessor = best_pipeline.named_steps["preprocessor"]
+best_xgb = best_pipeline.named_steps["classifier"]
+X_train_shap = preprocessor.transform(X_train)
+X_test_shap = preprocessor.transform(X_test)
+
+import shap
+
+explainer = shap.TreeExplainer(best_xgb)
+shap_values = explainer.shap_values(X_test_shap)
+shap.summary_plot(
+    shap_values,
+    X_test_shap,
+    feature_names=feature_names,
+    plot_type="bar"
+)
+
+### 5.2.2 SHAP Summary Plot
+##### this side by side plot shows how high or low feature values push the model toward or away from each specific severity class.
+##### Red Dots mean a feature value is High.
+##### Blue Dots mean a feature value is Low.
+##### Right direction (Positive): Pushes model to choose this severity class.
+##### Left direction (Negative): Pushes model away from this severity class.
+
+import shap
+import matplotlib.cm as cm
+import matplotlib.colors as colors
+import warnings
+
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
+
+# 1. Create a massive horizontal canvas. 
+fig, axes = plt.subplots(1, 3, figsize=(22, 10), sharey=False)
+
+for class_index in range(3):
+    ax = axes[class_index]
+    class_name = le_severity_3.classes_[class_index]
+    ax.set_title(f"SHAP - {class_name}", fontsize=16, pad=15)
+    
+    plt.sca(ax)
+    shap.summary_plot(
+        shap_values[:, :, class_index], X_test_shap,
+        feature_names=feature_names, plot_size=None,   
+        color_bar=False, show=False)
+
+# 5. FIXED COLORBAR MAP: Using modern matplotlib syntax
+sm = cm.ScalarMappable(cmap=plt.colormaps["coolwarm"], norm=colors.Normalize(vmin=0, vmax=1))
+sm.set_array([])
+
+cbar_ax = fig.add_axes([0.93, 0.15, 0.015, 0.7]) 
+cbar = fig.colorbar(sm, cax=cbar_ax)
+cbar.set_label("Feature Value", fontsize=14, labelpad=10)
+cbar.set_ticks([0, 1])
+cbar.set_ticklabels(["Low", "High"])
+
+# 6. Clean up the padding between your 3 side-by-side plots
+plt.subplots_adjust(wspace=0.5, left=0.1, right=0.9)
+plt.show()
+
+### 5.3 Future Work
+##### Future research could investigate stricter decision boundaries for the Medium class. 
+# Since most classification errors occurred between Medium and the other severity levels, adjusting class thresholds may improve the detection of Medium threats and overall model performance.
 
 # ------------------------------------------------------------------------------------------------
 
-### 6. DEPLOYMENT
+## 6. DEPLOYMENT
 
 ### 6.1 Predict Severity Level with existed ID on dataset
 ##### A prediction function was created to estimate the severity level of an event based on its event ID. 
@@ -840,30 +991,61 @@ def predict_threat_probability(event_id, target_model):
 
 print(predict_threat_probability("EVT_004660", xgb_grid))
 
-### 6.2 Predict Severity Level with new value on these features (network_zone, behavioral_score, attack_freq, failed_login)
+### 6.2 Predict Severity Level with new value on these features (byte_rate, behavioral_score, packet_rate, failed_login)
 ##### A second prediction function was developed to allow users to enter new threat characteristics, including network zone, behavioral risk score, historical attack frequency, and failed login count. 
-# These features were chosen to demonstrate how the model can use different threat characteristics to estimate the severity of a new event.
+##### Based on your LIME bar charts and SHAP beeswarm plots, These features were chosen because they carry high global importance and clear directionality patterns.
 ##### The model then estimates the probability of each severity level. This demonstrates how the model can support future threat assessment for new incidents that are not already stored in the dataset.
 
-def predict_raw_threat_probability(network_zone, behavioral_score, attack_freq, failed_logins, target_model=xgb_grid):
+def predict_raw_threat_probability(
+    byte_rate,
+    behavioral_score,
+    packet_rate,
+    failed_logins,
+    target_model=xgb_grid
+):
     features = target_model.best_estimator_.feature_names_in_
-    X_single = pd.DataFrame([ [None] * len(features) ], columns=features)
-    X_single.loc[0, ["network_zone", "behavioral_risk_score", "historical_attack_frequency", "failed_login_count"]] = [
-        network_zone, behavioral_score, attack_freq, failed_logins]
-    X_single = X_single.fillna(0)
-    return dict(zip(le_severity_3.classes_, target_model.predict_proba(X_single)[0]))
+
+    # Start with a copy of one real row to preserve correct data types
+    X_single = df[features].iloc[[0]].copy()
+
+    # Replace only the values entered by the user
+    X_single.loc[0, "byte_rate"] = byte_rate
+    X_single.loc[0, "behavioral_risk_score"] = behavioral_score
+    X_single.loc[0, "packet_rate"] = packet_rate
+    X_single.loc[0, "failed_login_count"] = failed_logins
+
+    probabilities = target_model.predict_proba(X_single)[0]
+
+    return dict(zip(le_severity_3.classes_, probabilities))
 
 print(predict_raw_threat_probability(
-    network_zone=2, 
-    behavioral_score=78.5, 
-    attack_freq=12, 
-    failed_logins=4))
+    byte_rate=10000,
+    behavioral_score=0.70,
+    packet_rate=70,
+    failed_logins=4
+))
 
 ### 6.3 Deploy model to an App
 
 # Save model and prediction 
 joblib.dump(xgb_grid, "model/xgb_grid_model.joblib")
 joblib.dump(le_severity_3, "model/label_encoder.joblib")
+
+#### One of many structure that could be suggested to apply:
+#### 1. Store Dataset and Model
+##### The dataset is stored in a company database and managed through SQL, while the final XGBoost GridSearchCV model and label encoder are saved as Joblib (.joblib) files for deployment.
+#### 2. Cloud Deployment
+##### The saved Joblib files are integrated into a Flask web application and deployed on the Render or other cloud platform. The cloud server runs the application and the trained model.
+#### 3. Web Application Deployment
+##### Stakeholders can access the model through a web browser, enter cybersecurity event information, and receive threat severity predictions and probability scores remotely without needing Python or machine learning software installed locally.
+##### https://exam2-mads2.onrender.com
+
+## 7. References
+#### DeCastro-García, N., Muñoz Castañeda, Á. L., & Fernández-Rodríguez, M. (2020). Machine learning for automatic assignment of the severity of cybersecurity events. Computational and Mathematical Methods, 2, e1072. https://doi.org/10.1002/cmm4.1072
+#### Shearer, C. (2000) The CRISP-DM Model: The New Blueprint for Data Mining. Journal of Data Warehousing, 5 (4), 13-22.
+##### van der Maaten, L., & Hinton, G. (2008). Visualizing data using t-SNE. Journal of Machine Learning Research, 9, 2579–2605. https://jmlr.org/papers/v9/vandermaaten08a.html
+##### Sow, T. H., & Mehdi, A. (2025). Enhancing IDS performance through a comparative analysis of Random Forest, XGBoost, and deep neural networks. Machine Learning with Applications, 22, 100738. https://doi.org/10.1016/j.mlwa.2025.100738
+#### Naik, B., Mehta, A., Yagnik, H., & Shah, M. (2022). The impacts of artificial intelligence techniques in augmentation of cybersecurity: A comprehensive review. Complex & Intelligent Systems, 8, 1763–1780. https://doi.org/10.1007/s40747-021-00494-8
 
 
 

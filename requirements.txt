@@ -1,6 +1,7 @@
 Flask
 gunicorn
 
+kagglehub
 pandas
 numpy
 matplotlib

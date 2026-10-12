@@ -38,8 +38,7 @@
     </div>
 
     {% if error_message %}
-    <div class="alert alert-danger">
-        {{ error_message }}
+    <div class="alert alert-danger"> {{ error_message }}
     </div>
     {% endif %}
 
@@ -47,9 +46,7 @@
         <li class="nav-item">
             <button
                 class="nav-link {% if active_tab == 'existing' %}active{% endif %}"
-                id="existing-tab"
-                data-bs-toggle="tab"
-                data-bs-target="#existing-pane"
+                id="existing-tab" data-bs-toggle="tab" data-bs-target="#existing-pane" 
                 type="button"> Existed Event
             </button>
         </li>
@@ -63,7 +60,6 @@
     </ul>
 
     <div class="tab-content">
-
         <div
             class="tab-pane fade {% if active_tab == 'existing' %}show active{% endif %}" id="existing-pane">
             <h3 class="h5 mb-2">Predict Severity from Existed Event</h3>
@@ -74,7 +70,15 @@
 
                 <div class="mb-3">
                     <label for="event_id" class="form-label fw-semibold">Event ID</label>
-                    <input type="text" class="form-control" id="event_id" name="event_id" value="EVT_004660" required>
+
+                    <select class="form-select" id="event_id" name="event_id" required>
+                        {% for event_id in event_ids %}
+                            <option value="{{ event_id }}"
+                                {% if event_id == "EVT_004660" %}selected{% endif %}>
+                                {{ event_id }}
+                            </option>
+                        {% endfor %}
+                    </select>
                 </div>
 
                 <button type="submit" class="btn btn-dark" >Predict Existed Event </button>
@@ -109,177 +113,78 @@
         <!-- NEW EVENT -->
 
         <div
-            class="tab-pane fade {% if active_tab == 'new' %}show active{% endif %}"
-            id="new-pane"
-        >
-
-            <h3 class="h5 mb-2">
-                Predict Severity from New Values
-            </h3>
-
-            <p class="text-muted small">
-                Enter selected threat characteristics.
-            </p>
-
+            class="tab-pane fade {% if active_tab == 'new' %}show active{% endif %}" id="new-pane">
+            <h3 class="h5 mb-2">Predict Severity from New Values</h3>
+            <p class="text-muted small">Enter selected threat characteristics.</p>
             <form method="POST">
-
-                <input
-                    type="hidden"
-                    name="form_type"
-                    value="new"
-                >
+                <input 
+                    type="hidden" name="form_type" value="new">
 
                 <div class="mb-3">
-
-                    <label
-                        for="byte_rate"
-                        class="form-label fw-semibold"
-                    >
-                        Byte Rate
-                    </label>
-
+                    <label for="byte_rate" class="form-label fw-semibold">Byte Rate</label>
                     <input
-                        type="number"
-                        class="form-control"
-                        id="byte_rate"
-                        name="byte_rate"
-                        value="100"
-                        step="any"
-                        required
-                    >
-
+                        type="number" class="form-control"
+                        id="byte_rate" name="byte_rate"
+                        value="100" step="any" required>
                 </div>
 
                 <div class="mb-3">
-
-                    <label
-                        for="behavioral_risk_score"
-                        class="form-label fw-semibold"
-                    >
-                        Behavioral Risk Score
-                    </label>
-
+                    <label for="behavioral_risk_score" class="form-label fw-semibold">Behavioral Risk Score</label>
                     <input
-                        type="number"
-                        class="form-control"
-                        id="behavioral_risk_score"
-                        name="behavioral_risk_score"
-                        value="78.5"
-                        step="any"
-                        required
-                    >
-
+                        type="number" class="form-control"
+                        id="behavioral_risk_score" name="behavioral_risk_score"
+                        value="78.5" step="any" required>
                 </div>
 
                 <div class="mb-3">
-
-                    <label
-                        for="packet_rate"
-                        class="form-label fw-semibold"
-                    >
-                        Packet Rate
-                    </label>
-
+                    <label for="packet_rate" class="form-label fw-semibold">Packet Rate </label>
                     <input
-                        type="number"
-                        class="form-control"
-                        id="packet_rate"
-                        name="packet_rate"
-                        value="12"
-                        step="any"
-                        required
-                    >
-
+                        type="number" class="form-control"
+                        id="packet_rate" name="packet_rate"
+                        value="12" step="any" required>
                 </div>
 
                 <div class="mb-3">
-
-                    <label
-                        for="failed_login_count"
-                        class="form-label fw-semibold"
-                    >
-                        Failed Login Count
-                    </label>
-
+                    <label for="failed_login_count"class="form-label fw-semibold">Failed Login Count</label>
                     <input
-                        type="number"
-                        class="form-control"
-                        id="failed_login_count"
-                        name="failed_login_count"
-                        value="4"
-                        step="any"
-                        required
-                    >
-
+                        type="number" class="form-control" 
+                        id="failed_login_count" name="failed_login_count" 
+                        value="4" step="any" required>
                 </div>
 
-                <button
-                    type="submit"
-                    class="btn btn-dark"
-                >
-                    Predict New Event
-                </button>
-
+                <button type="submit"class="btn btn-dark">Predict New Event</button>
             </form>
-
             {% if results and active_tab == "new" %}
 
             <div
-                id="prediction-result"
-                class="results-box p-4 mt-4 rounded shadow-sm"
-            >
-
-                <h3 class="text-success mb-2">
-                    Predicted Severity:
-                    {{ results.final_prediction }}
-                </h3>
-
-                <h5 class="mt-4 mb-3 text-secondary">
-                    Severity Probabilities
-                </h5>
+                id="prediction-result"class="results-box p-4 mt-4 rounded shadow-sm">
+                <h3 class="text-success mb-2">Predicted Severity:{{ results.final_prediction }}</h3>
+                <h5 class="mt-4 mb-3 text-secondary">Severity Probabilities</h5>
 
                 {% for item in results.breakdown %}
 
                 <div class="mb-3">
-
                     <div class="d-flex justify-content-between mb-1">
-
-                        <span>
-                            <strong>{{ item.class_name }}</strong>
-                        </span>
-
-                        <span>
-                            {{ item.percentage_str }}
-                        </span>
-
+                        <span><strong>{{ item.class_name }}</strong></span>
+                        <span>{{ item.percentage_str }}</span>
                     </div>
-
                     <div
                         class="progress"
-                        style="height:20px;"
-                    >
-
+                        style="height:20px;">
                         <div
                             class="progress-bar bg-primary"
                             role="progressbar"
-                            style="width: {{ item.progress_percent }}%;"
-                        >
+                            style="width: {{ item.progress_percent }}%;">
                         </div>
-
                     </div>
-
                 </div>
 
                 {% endfor %}
-
             </div>
 
             {% endif %}
-
         </div>
-
     </div>
-
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -289,23 +194,17 @@
 document
     .querySelectorAll('[data-bs-toggle="tab"]')
     .forEach(tab => {
-
         tab.addEventListener(
             'shown.bs.tab',
             function () {
-
                 const resultBox =
                     document.getElementById(
                         "prediction-result"
                     );
-
                 if (resultBox) {
                     resultBox.remove();
-                }
-
-            }
+                }}
         );
-
     });
 
 </script>
