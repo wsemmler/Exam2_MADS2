@@ -18,4 +18,5 @@ tensorflow
 keras
 keras-tuner
 
-joblib
+spyder-kernels
+
